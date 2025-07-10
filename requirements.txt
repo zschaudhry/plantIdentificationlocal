@@ -1,0 +1,7 @@
+streamlit
+numpy
+torch
+torchvision
+open_clip_torch
+Pillow
+# For local model/embedding loading
