@@ -182,29 +182,223 @@ with st.sidebar:
     """)
 
 # Main content area
-col1, col2 = st.columns([1, 2])
+if uploaded_image is not None:
+    @st.cache_data(show_spinner=False)
+    def load_image(image_file):
+        img = Image.open(image_file)
+        img = img.convert("RGB")
+        img = img.resize((224, 224), resample=Image.BICUBIC)
+        return img
+    image = load_image(uploaded_image)
+    st.image(image, caption='Uploaded Image (224x224) :framed_picture:', use_container_width=False, width=128)
+    # Automatically classify and show top 5 results in tabs below the image
+    with st.spinner("Classifying... :hourglass_flowing_sand:"):
+        def open_domain_classification(img, k=5):
+            img = preprocess_img(img).to(device)
+            img_features = model.encode_image(img.unsqueeze(0))
+            img_features = F.normalize(img_features, dim=-1)
+            logits = (model.logit_scale.exp() * img_features @ txt_emb).squeeze()
+            probs = F.softmax(logits, dim=0)
+            topk = probs.topk(k)
+            results = []
+            for idx, (prob, idx_val) in enumerate(zip(topk.values.tolist(), topk.indices.tolist())):
+                prediction = txt_names[idx_val][0]
+                genus = prediction[5] if len(prediction) > 5 else ""
+                species_epithet = " ".join(prediction[6:]) if len(prediction) > 6 else ""
+                scientific_name = f"{genus} {species_epithet}".strip()
+                result = {
+                    "Rank": idx + 1,
+                    "Kingdom": prediction[0],
+                    "Phylum": prediction[1],
+                    "Class": prediction[2],
+                    "Order": prediction[3],
+                    "Family": prediction[4],
+                    "Genus": genus,
+                    "Scientific Name": scientific_name,
+                    "Confidence (%)": f"{prob * 100:.2f}"
+                }
+                results.append(result)
+            return results
+        classification_results = open_domain_classification(image, k=5)
+        import pandas as pd
+        df = pd.DataFrame(classification_results)
+        # Create selectbox above tabs with first scientific name selected
+        scientific_names = df["Scientific Name"].tolist()
+        selected_scientific_name = st.selectbox("Select Scientific Name:", options=scientific_names, index=0)
 
+        # USDA query function
+        import requests
+        def query_invasive_species_database(scientific_name):
+            url = "https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_InvasiveSpecies_01/MapServer/0/query"
+            out_fields = [
+                "NRCS_PLANT_CODE", "SCIENTIFIC_NAME", "COMMON_NAME", "PROJECT_CODE", "PLANT_STATUS",
+                "FS_UNIT_NAME", "EXAMINERS", "LAST_UPDATE"
+            ]
+            params = {
+                'where': f"SCIENTIFIC_NAME='{scientific_name}'",
+                'outFields': ",".join(out_fields),
+                'returnGeometry': 'true',
+                'f': 'json'
+            }
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
+                return response.json()
+            return None
 
-with col1:
-    if uploaded_image is not None:
-        @st.cache_data(show_spinner=False)
-        def load_image(image_file):
-            img = Image.open(image_file)
-            # Resize to model input size (224x224) immediately for both display and classification
-            img = img.convert("RGB")
-            img = img.resize((224, 224), resample=Image.BICUBIC)
-            return img
-        image = load_image(uploaded_image)
-        st.image(image, caption='Uploaded Image (224x224) :framed_picture:', use_container_width=False, width=128)
+        # Query USDA for selected scientific name
+        usda_data = query_invasive_species_database(selected_scientific_name)
+        usda_df = None
+        if usda_data and 'features' in usda_data:
+            features = usda_data['features']
+            grid_data = [f['attributes'] for f in features] if features else []
+            import pandas as pd
+            usda_df = pd.DataFrame(grid_data) if grid_data else pd.DataFrame()
 
+        # Create five tabs in the main container, full width
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Top Predictions",
+            "USDA Data",
+            "Summary",
+            "Map",
+            "Wikipedia Info"
+        ])
+        with tab1:
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        with tab2:
+            if usda_df is not None and not usda_df.empty:
+                invasive_df = usda_df.copy()
+                import pandas as pd
+                for col in invasive_df.columns:
+                    col_dtype = invasive_df[col].dtype
+                    if pd.api.types.is_object_dtype(col_dtype):
+                        sample = invasive_df[col].dropna().astype(str).head(10)
+                        if sample.str.match(r"^\d{4}-\d{2}-\d{2}T").any() or sample.str.match(r"^\d{4}-\d{2}-\d{2}$").any():
+                            invasive_df[col] = pd.to_datetime(invasive_df[col], errors='coerce').dt.strftime('%Y-%m-%d')
+                        elif sample.str.match(r"^\d{12,}").any() or sample.str.match(r"^\d{10,}").any():
+                            dt = pd.to_datetime(invasive_df[col], errors='coerce', unit='ms')
+                            if dt.isna().all():
+                                dt = pd.to_datetime(invasive_df[col], errors='coerce', unit='s')
+                            invasive_df[col] = dt.dt.strftime('%Y-%m-%d')
+                    elif pd.api.types.is_integer_dtype(col_dtype) or pd.api.types.is_float_dtype(col_dtype):
+                        sample = invasive_df[col].dropna().astype(str).head(10)
+                        if sample.str.match(r"^\d{12,}").any() or sample.str.match(r"^\d{10,}").any():
+                            dt = pd.to_datetime(invasive_df[col], errors='coerce', unit='ms')
+                            if dt.isna().all():
+                                dt = pd.to_datetime(invasive_df[col], errors='coerce', unit='s')
+                            invasive_df[col] = dt.dt.strftime('%Y-%m-%d')
+                if 'LAST_UPDATE' in invasive_df.columns:
+                    try:
+                        invasive_df['LAST_UPDATE_sort'] = pd.to_datetime(invasive_df['LAST_UPDATE'], errors='coerce')
+                        invasive_df = invasive_df.sort_values('LAST_UPDATE_sort', ascending=False).drop(columns=['LAST_UPDATE_sort'])
+                    except Exception:
+                        pass
+                st.dataframe(invasive_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning(f"No USDA Invasive Species data found for: {selected_scientific_name}")
+        with tab3:
+            if usda_df is not None and not usda_df.empty and 'FS_UNIT_NAME' in usda_df.columns:
+                summary_df = usda_df.groupby('FS_UNIT_NAME').size().reset_index(name='Record Count')
+                summary_df = summary_df.rename(columns={'FS_UNIT_NAME': 'FS Unit Name'})
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No USDA data available to summarize by FS Unit Name.")
+        with tab4:
+            import pydeck as pdk
+            def show_invasive_map(invasive_map_df, width=800, height=600):
+                """
+                Display an interactive heatmap of invasive species points using pydeck (Deck.gl).
+                """
+                if invasive_map_df.empty or not {'lat', 'lon'}.issubset(invasive_map_df.columns):
+                    st.info("No map data available.")
+                    return
+                df = invasive_map_df.dropna(subset=['lat', 'lon']).copy()
+                if df.empty:
+                    st.info("No valid map coordinates available.")
+                    return
+                layer = pdk.Layer(
+                    "HeatmapLayer",
+                    data=df,
+                    opacity=0.9,
+                    radius_scale=6,
+                    radius_min_pixels=1,
+                    radius_max_pixels=100,
+                    get_position='[lon, lat]'
+                )
+                view_state = pdk.ViewState(
+                    latitude=df['lat'].mean(),
+                    longitude=df['lon'].mean(),
+                    zoom=5,
+                    pitch=0,
+                )
+                deck = pdk.Deck(
+                    layers=[layer],
+                    initial_view_state=view_state,
+                    map_style='road'
+                )
+                st.pydeck_chart(deck, use_container_width=True)
 
-with col2:
-    if uploaded_image is not None:
-        classify_btn = st.button(":mag: Classify :rocket:", use_container_width=True)
-        if classify_btn:
-            with st.spinner("Classifying... :hourglass_flowing_sand:"):
-                classification_result = open_domain_classification(image)
-            st.success("Classification Results :trophy: :sparkles:")
-            st.table({rank + " :label:": classification for rank, classification in classification_result.items()})
-    else:
-        st.info("Please upload an image to begin classification. :arrow_up:")
+            # Extract coordinates from USDA response
+            coords = []
+            if usda_data and 'features' in usda_data:
+                for f in usda_data['features']:
+                    geom = f.get('geometry', {})
+                    # ESRI geometry can be point, multipoint, polyline, polygon, etc.
+                    if 'x' in geom and 'y' in geom:
+                        coords.append({'lat': geom['y'], 'lon': geom['x']})
+                    elif 'points' in geom and isinstance(geom['points'], list):
+                        for pt in geom['points']:
+                            if len(pt) == 2:
+                                coords.append({'lat': pt[1], 'lon': pt[0]})
+                    elif 'paths' in geom and isinstance(geom['paths'], list):
+                        for path in geom['paths']:
+                            for pt in path:
+                                if len(pt) == 2:
+                                    coords.append({'lat': pt[1], 'lon': pt[0]})
+                    elif 'rings' in geom and isinstance(geom['rings'], list):
+                        for ring in geom['rings']:
+                            for pt in ring:
+                                if len(pt) == 2:
+                                    coords.append({'lat': pt[1], 'lon': pt[0]})
+            import pandas as pd
+            invasive_map_df = pd.DataFrame(coords)
+            show_invasive_map(invasive_map_df)
+        with tab5:
+            import requests
+            import re
+            from typing import Optional
+
+            def _clean_wikipedia_html(html: str) -> str:
+                html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL)
+                html = re.sub(r'<!--.*?-->', '', html, flags=re.DOTALL)
+                html = re.sub(r'<sup[^>]*>.*?</sup>', '', html, flags=re.DOTALL)
+                html = re.sub(r'<a [^>]+>(.*?)</a>', r'\1', html, flags=re.DOTALL)
+                clean_text = re.sub('<[^<]+?>', '', html)
+                clean_text = re.sub(r'\[[^\]]*\]', '', clean_text)
+                clean_text = '\n'.join([line for line in clean_text.splitlines() if not line.strip().startswith('^')])
+                clean_text = re.sub(r'/\*.*?\*/', '', clean_text, flags=re.DOTALL)
+                clean_text = re.sub(r'\{[^\}]*\}', '', clean_text, flags=re.DOTALL)
+                clean_text = '\n'.join([line for line in clean_text.splitlines() if line.strip()])
+                return clean_text.strip()
+
+            def get_wikipedia_summary(scientific_name: str) -> Optional[dict]:
+                wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{scientific_name.replace(' ', '_')}"
+                try:
+                    resp = requests.get(wiki_url)
+                    if resp.status_code == 200:
+                        return resp.json()
+                except Exception as e:
+                    st.error(f"Wikipedia request failed: {e}")
+                return None
+
+            wiki_data = get_wikipedia_summary(selected_scientific_name)
+            if wiki_data:
+                title = wiki_data.get('title', selected_scientific_name)
+                extract = wiki_data.get('extract', '')
+                st.subheader(title)
+                st.write(extract)
+                if 'thumbnail' in wiki_data and 'source' in wiki_data['thumbnail']:
+                    st.image(wiki_data['thumbnail']['source'], caption=title)
+            else:
+                st.warning(f"No Wikipedia summary found for: {selected_scientific_name}")
+else:
+    st.info("Please upload an image to begin classification. :arrow_up:")
