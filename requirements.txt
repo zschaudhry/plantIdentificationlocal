@@ -2,6 +2,8 @@ streamlit
 numpy
 torch
 torchvision
-open_clip_torch
+open-clip-torch
 Pillow
-# For local model/embedding loading
+pandas
+requests
+pydeck
