@@ -191,12 +191,21 @@ if uploaded_image is not None:
             if wiki_data:
                 title = wiki_data.get('title', selected_scientific_name)
                 extract = wiki_data.get('extract', '')
-                st.subheader(title)
-                st.write(extract)
-                if 'thumbnail' in wiki_data and 'source' in wiki_data['thumbnail']:
-                    st.image(wiki_data['thumbnail']['source'], caption=title)
-                if 'page_url' in wiki_data and wiki_data['page_url']:
-                    st.markdown(f"[View on Wikipedia]({wiki_data['page_url']})")
+                thumbnail_url = wiki_data.get('thumbnail', {}).get('source', None)
+                page_url = wiki_data.get('page_url', None)
+                # Card-style formatting for Wikipedia info
+                st.markdown(f"""
+<div style='background-color: #f8f9fa; border-radius: 12px; padding: 1.5em 1em; box-shadow: 0 2px 8px rgba(0,0,0,0.07); display: flex; align-items: flex-start;'>
+    <div style='flex:0 0 auto; margin-right: 1.5em;'>
+        {'<img src="' + thumbnail_url + '" alt="' + title + '" style="border-radius:8px;max-width:160px;box-shadow:0 1px 4px rgba(0,0,0,0.10);margin-bottom:0.5em;" />' if thumbnail_url else ''}
+    </div>
+    <div style='flex:1 1 auto;'>
+        <h3 style='margin-top:0;margin-bottom:0.5em;color:#2c3e50;'>{title}</h3>
+        <p style='font-size:1.1em;line-height:1.6;color:#444;'>{extract}</p>
+        {f'<a href="{page_url}" target="_blank" style="color:#0074d9;font-weight:500;text-decoration:none;">View on Wikipedia &#8599;</a>' if page_url else ''}
+    </div>
+</div>
+""", unsafe_allow_html=True)
             else:
                 st.warning(f"No Wikipedia summary found for: {selected_scientific_name}")
 else:
