@@ -4,8 +4,6 @@ from open_clip import create_model, get_tokenizer
 from torchvision import transforms
 import numpy as np
 import json
-import os
-from PIL import Image
 
 def load_model_and_tokenizer(model_bin, device):
     model = create_model(
