@@ -200,7 +200,8 @@ if uploaded_image is not None:
             if wiki_data:
                 title = wiki_data.get('title', selected_scientific_name)
                 extract = wiki_data.get('extract', '')
-                thumbnail_url = wiki_data.get('thumbnail', {}).get('source', None)
+                thumbnail_data = wiki_data.get('thumbnail')
+                thumbnail_url = thumbnail_data.get('source') if isinstance(thumbnail_data, dict) else None
                 page_url = wiki_data.get('page_url', None)
                 # Display Wikipedia info using Streamlit widgets for better UX
                 st.subheader(title)
