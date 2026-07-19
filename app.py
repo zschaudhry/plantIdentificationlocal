@@ -1,13 +1,22 @@
-#import statements at the top
+# import statements at the top
 import os
 import torch
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
+
 # Import refactored logic modules
-from utils.model import load_model_and_tokenizer, load_text_embeddings, open_domain_classification
+from utils.model import (
+    load_model_and_tokenizer,
+    load_text_embeddings,
+    open_domain_classification,
+)
 from utils.image import load_image
-from utils.usda import query_invasive_species_database, format_usda_dates, extract_usda_coordinates
+from utils.usda import (
+    query_invasive_species_database,
+    format_usda_dates,
+    extract_usda_coordinates,
+)
 from utils.wikipedia import get_wikipedia_summary
 
 
@@ -15,7 +24,7 @@ from utils.wikipedia import get_wikipedia_summary
 st.set_page_config(page_title="Open-Domain Image Classification", layout="wide")
 
 # Set up logging (set to WARNING for performance; change to INFO for debugging)
- 
+
 
 ######################################################################
 # NOTE: To avoid unnecessary Streamlit cache invalidation:
@@ -43,67 +52,90 @@ elif torch.cuda.is_available():
     device = torch.device("cuda")
 else:
     device = torch.device("cpu")
+
+
 # Load model/tokenizer and embeddings using refactored logic
 @st.cache_resource
 def get_model_and_tokenizer():
     return load_model_and_tokenizer(MODEL_BIN, device)
 
+
 with st.spinner("Loading model and tokenizer... :hourglass:"):
     model, tokenizer = get_model_and_tokenizer()
+
 
 @st.cache_data
 def get_text_embeddings():
     return load_text_embeddings(EMBEDDINGS_NPY, EMBEDDINGS_JSON, device)
 
+
 with st.spinner("Loading text embeddings... :hourglass:"):
     txt_emb, txt_names = get_text_embeddings()
+
 
 # Cache USDA and Wikipedia API calls to avoid repeated requests on rerun
 @st.cache_data
 def cached_query_invasive_species_database(scientific_name):
     return query_invasive_species_database(scientific_name)
 
+
 @st.cache_data
 def cached_get_wikipedia_summary(scientific_name):
     return get_wikipedia_summary(scientific_name)
 
-st.success("Model and embeddings loaded! Ready for image upload and classification. :white_check_mark:")
+
+st.success(
+    "Model and embeddings loaded! Ready for image upload and classification. :white_check_mark:"
+)
 
 # Define ranks and format name function
 ranks = ("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+
 def format_name(taxon):
     return " ".join(taxon)
 
 
-st.markdown("""
+st.markdown(
+    """
 <style>
 .main .block-container {padding-top: 2rem;}
 .stButton>button {width: 100%;}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 st.title(":seedling: Open-Domain Image Classification :owl:")
-st.write("Upload an image of a plant or animal to classify it into taxonomic ranks using BioCLIP-2. :leaves: :tiger: :owl: :herb:")
+st.write(
+    "Upload an image of a plant or animal to classify it into taxonomic ranks using BioCLIP-2. :leaves: :tiger: :owl: :herb:"
+)
 
 
 # Sidebar for upload and info
 with st.sidebar:
     st.header("Upload Image :frame_with_picture:")
-    uploaded_image = st.file_uploader("Choose an image :camera:", type=["jpg", "jpeg", "png"])
-    st.markdown("""
+    uploaded_image = st.file_uploader(
+        "Choose an image :camera:", type=["jpg", "jpeg", "png"]
+    )
+    st.markdown(
+        """
     **Instructions :memo::**
     - Upload a clear image of a plant or animal. :deciduous_tree: :dog: :bird:
     - Click **Classify** :mag: to see results.
-    """)
+    """
+    )
 
 # Main content area
 if uploaded_image is not None:
+
     @st.cache_data(show_spinner=False)
     def cached_load_image(image_file):
         return load_image(image_file)
+
     image = cached_load_image(uploaded_image)
-    st.image(image, caption='Uploaded Image (224x224) :framed_picture:', width=128)
+    st.image(image, caption="Uploaded Image (224x224) :framed_picture:", width=128)
     # Automatically classify and show top 5 results in tabs below the image
     with st.spinner("Classifying... :hourglass_flowing_sand:"):
         classification_results = open_domain_classification(
@@ -116,18 +148,23 @@ if uploaded_image is not None:
             st.error("No scientific names found in classification results.")
             st.stop()
         # Use session state to track selection
-        if "selected_scientific_name" not in st.session_state or st.session_state.selected_scientific_name not in scientific_names:
+        if (
+            "selected_scientific_name" not in st.session_state
+            or st.session_state.selected_scientific_name not in scientific_names
+        ):
             st.session_state.selected_scientific_name = scientific_names[0]
         selected_scientific_name = st.selectbox(
             "Select Scientific Name:",
             options=scientific_names,
-            key="selected_scientific_name"
+            key="selected_scientific_name",
         )
         # Basic input sanitization for security
         import re
+
         def sanitize_scientific_name(name):
             # Allow only letters, numbers, spaces, hyphens, and periods
-            return re.sub(r'[^\w\s\-.]', '', name)
+            return re.sub(r"[^\w\s\-.]", "", name)
+
         selected_scientific_name = sanitize_scientific_name(selected_scientific_name)
         # Query USDA and Wikipedia for selected scientific name only if valid
         usda_data = None
@@ -136,18 +173,20 @@ if uploaded_image is not None:
             usda_data = cached_query_invasive_species_database(selected_scientific_name)
             wiki_data = cached_get_wikipedia_summary(selected_scientific_name)
         usda_df = None
-        if usda_data and 'features' in usda_data:
-            features = usda_data['features']
-            grid_data = [f['attributes'] for f in features] if features else []
+        if usda_data and "features" in usda_data:
+            features = usda_data["features"]
+            grid_data = [f["attributes"] for f in features] if features else []
             usda_df = pd.DataFrame(grid_data) if grid_data else pd.DataFrame()
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Top Predictions",
-            "Forest Service Data",
-            "Summary Table",
-            "Map",
-            "Wikipedia Info"
-        ])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+            [
+                "Top Predictions",
+                "Forest Service Data",
+                "Summary Table",
+                "Map",
+                "Wikipedia Info",
+            ]
+        )
         with tab1:
             st.dataframe(df, use_container_width=True, hide_index=True)
         with tab2:
@@ -155,28 +194,41 @@ if uploaded_image is not None:
                 invasive_df = format_usda_dates(usda_df)
                 st.dataframe(invasive_df, use_container_width=True, hide_index=True)
             else:
-                st.warning(f"No USDA Invasive Species data found for: {selected_scientific_name}")
+                st.warning(
+                    f"No USDA Invasive Species data found for: {selected_scientific_name}"
+                )
         with tab3:
-            if usda_df is not None and not usda_df.empty and 'FS_UNIT_NAME' in usda_df.columns:
-                summary_df = usda_df.groupby('FS_UNIT_NAME').size().reset_index(name='Record Count')
-                summary_df = summary_df.rename(columns={'FS_UNIT_NAME': 'FS Unit Name'})
+            if (
+                usda_df is not None
+                and not usda_df.empty
+                and "FS_UNIT_NAME" in usda_df.columns
+            ):
+                summary_df = (
+                    usda_df.groupby("FS_UNIT_NAME")
+                    .size()
+                    .reset_index(name="Record Count")
+                )
+                summary_df = summary_df.rename(columns={"FS_UNIT_NAME": "FS Unit Name"})
                 st.dataframe(summary_df, use_container_width=True, hide_index=True)
             else:
                 st.info("No USDA data available to summarize by FS Unit Name.")
         with tab4:
             invasive_map_df = extract_usda_coordinates(usda_data)
+
             def show_invasive_map(invasive_map_df, width=800, height=600):
-                if invasive_map_df.empty or not {'lat', 'lon'}.issubset(invasive_map_df.columns):
+                if invasive_map_df.empty or not {"lat", "lon"}.issubset(
+                    invasive_map_df.columns
+                ):
                     st.info("No map data available.")
                     return
-                df = invasive_map_df.dropna(subset=['lat', 'lon']).copy()
+                df = invasive_map_df.dropna(subset=["lat", "lon"]).copy()
                 if df.empty:
                     st.info("No valid map coordinates available.")
                     return
                 layer = pdk.Layer(
                     "HeatmapLayer",
                     data=df,
-                    get_position='[lon, lat]',
+                    get_position="[lon, lat]",
                     opacity=0.9,
                     radius=100,
                     radius_scale=6,
@@ -184,25 +236,28 @@ if uploaded_image is not None:
                     radius_max_pixels=100,
                 )
                 view_state = pdk.ViewState(
-                    latitude=df['lat'].mean() if not df.empty else 37.7749,
-                    longitude=df['lon'].mean() if not df.empty else -122.4194,
+                    latitude=df["lat"].mean() if not df.empty else 37.7749,
+                    longitude=df["lon"].mean() if not df.empty else -122.4194,
                     zoom=4,
                     pitch=0,
                 )
                 deck = pdk.Deck(
-                    layers=[layer],
-                    initial_view_state=view_state,
-                    map_style='road'
+                    layers=[layer], initial_view_state=view_state, map_style="road"
                 )
                 st.pydeck_chart(deck, use_container_width=True)
+
             show_invasive_map(invasive_map_df)
         with tab5:
             if wiki_data:
-                title = wiki_data.get('title', selected_scientific_name)
-                extract = wiki_data.get('extract', '')
-                thumbnail_data = wiki_data.get('thumbnail')
-                thumbnail_url = thumbnail_data.get('source') if isinstance(thumbnail_data, dict) else None
-                page_url = wiki_data.get('page_url', None)
+                title = wiki_data.get("title", selected_scientific_name)
+                extract = wiki_data.get("extract", "")
+                thumbnail_data = wiki_data.get("thumbnail")
+                thumbnail_url = (
+                    thumbnail_data.get("source")
+                    if isinstance(thumbnail_data, dict)
+                    else None
+                )
+                page_url = wiki_data.get("page_url", None)
                 # Display Wikipedia info using Streamlit widgets for better UX
                 st.subheader(title)
                 if thumbnail_url:
@@ -210,10 +265,14 @@ if uploaded_image is not None:
                 if extract:
                     st.markdown(extract)
                 if page_url:
-                    st.markdown(f"[Read more on Wikipedia]({page_url})", unsafe_allow_html=False)
+                    st.markdown(
+                        f"[Read more on Wikipedia]({page_url})", unsafe_allow_html=False
+                    )
                 if not extract and not page_url:
                     st.info("No Wikipedia summary or page found for this species.")
             else:
-                st.warning(f"No Wikipedia summary found for: {selected_scientific_name}")
+                st.warning(
+                    f"No Wikipedia summary found for: {selected_scientific_name}"
+                )
 else:
     st.info("Please upload an image to begin classification. :arrow_up:")

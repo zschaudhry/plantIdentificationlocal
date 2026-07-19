@@ -1,10 +1,13 @@
 import requests
 from typing import Optional
 
+
 def _fetch_summary(title: str) -> Optional[dict]:
-    wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{title.replace(' ', '_')}"
+    wiki_url = (
+        f"https://en.wikipedia.org/api/rest_v1/page/summary/{title.replace(' ', '_')}"
+    )
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
     try:
         resp = requests.get(wiki_url, headers=headers, timeout=10)
@@ -22,6 +25,7 @@ def _fetch_summary(title: str) -> Optional[dict]:
         pass
     return None
 
+
 def get_wikipedia_summary(scientific_name: str) -> Optional[dict]:
     if not scientific_name:
         return None
@@ -29,7 +33,7 @@ def get_wikipedia_summary(scientific_name: str) -> Optional[dict]:
     data = _fetch_summary(scientific_name)
     if data:
         return data
-    
+
     # 2. Fallback: try querying just the genus (first word)
     parts = scientific_name.strip().split()
     if len(parts) > 1:
@@ -37,5 +41,5 @@ def get_wikipedia_summary(scientific_name: str) -> Optional[dict]:
         data = _fetch_summary(genus)
         if data:
             return data
-            
+
     return None
