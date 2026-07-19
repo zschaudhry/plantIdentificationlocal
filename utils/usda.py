@@ -1,21 +1,27 @@
 import requests
 import pandas as pd
+import re
 
 def query_invasive_species_database(scientific_name: str):
+    # Sanitize the input: allow only letters, numbers, spaces, hyphens, and periods
+    sanitized_name = re.sub(r'[^\w\s\-.]', '', scientific_name)
     url = "https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_InvasiveSpecies_01/MapServer/0/query"
     out_fields = [
         "NRCS_PLANT_CODE", "SCIENTIFIC_NAME", "COMMON_NAME", "PROJECT_CODE", "PLANT_STATUS",
         "FS_UNIT_NAME", "EXAMINERS", "LAST_UPDATE"
     ]
     params = {
-        'where': f"SCIENTIFIC_NAME='{scientific_name}'",
+        'where': f"SCIENTIFIC_NAME='{sanitized_name}'",
         'outFields': ",".join(out_fields),
         'returnGeometry': 'true',
         'f': 'json'
     }
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        return response.json()
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+    except requests.exceptions.RequestException:
+        pass
     return None
 
 def format_usda_dates(df: pd.DataFrame) -> pd.DataFrame:
